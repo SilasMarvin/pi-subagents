@@ -140,7 +140,11 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 	function readLastCallArgs(): string[] {
 		const callFile = fs.readdirSync(mockPi.dir).find((name) => name.startsWith("call-"));
 		assert.ok(callFile, "expected a recorded mock pi call");
-		return JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as { args: string[]; stdin?: string };
+		if (typeof payload.stdin === "string" && !payload.args.some((a) => a.startsWith("Task: "))) {
+			return [...payload.args, `Task: ${payload.stdin}`];
+		}
+		return payload.args;
 	}
 
 	it("runs multiple agents concurrently via mapConcurrent + runSync", async () => {

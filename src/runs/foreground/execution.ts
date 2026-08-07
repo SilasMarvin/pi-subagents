@@ -308,7 +308,7 @@ async function runSingleAttempt(
 	const permissionAuditPath = permissionRules && options.artifactsDir
 		? path.join(options.artifactsDir, "permission-audit", `${options.runId}-${options.index ?? 0}.jsonl`)
 		: undefined;
-	const { args, env: sharedEnv, tempDir, toolDiagnosticPath, runtimeAcknowledgedExtensionsPath, capabilityAudit } = buildPiArgs({
+	const { args, env: sharedEnv, tempDir, toolDiagnosticPath, runtimeAcknowledgedExtensionsPath, capabilityAudit, stdinContent } = buildPiArgs({
 		baseArgs: ["--mode", "json", "-p"],
 		task,
 		sessionEnabled: shared.sessionEnabled,
@@ -465,9 +465,13 @@ async function runSingleAttempt(
 		const proc = spawn(spawnSpec.command, spawnSpec.args, {
 			cwd: options.cwd ?? runtimeCwd,
 			env: spawnEnv,
-			stdio: ["ignore", "pipe", "pipe"],
+			// Stdin is always piped so the child reads the task consistently.
+			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
 		});
+		// Child may exit before reading; suppress EPIPE so the real error surfaces via exit handlers.
+		proc.stdin.on("error", () => {});
+		proc.stdin.end(stdinContent);
 		const jsonlWriter = createJsonlWriter(shared.jsonlPath, proc.stdout);
 		let processClosed = false;
 		let lifecycleFinished = false;

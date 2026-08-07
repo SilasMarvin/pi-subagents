@@ -528,6 +528,8 @@ function runPiStreaming(
 	stopMessage?: string,
 	registerTurnBudgetAbort?: (abort: ((message: string, state?: TurnBudgetState) => void) | undefined) => void,
 	onWriterProcess?: (writer: { state: "none" | "spawning" } | { state: "running"; pid: number }) => void,
+	/** Task content to write to the child's stdin. */
+	stdinContent: string,
 ): Promise<RunPiStreamingResult> {
 	return new Promise((resolve) => {
 		const startedAt = Date.now();
@@ -541,10 +543,14 @@ function runPiStreaming(
 		});
 		const child = spawn(spawnSpec.command, spawnSpec.args, {
 			cwd,
-			stdio: ["ignore", "pipe", "pipe"],
+			// Stdin is always piped so the child reads the task consistently.
+			stdio: ["pipe", "pipe", "pipe"],
 			env: spawnEnv,
 			windowsHide: true,
 		});
+		// Child may exit before reading; suppress EPIPE so the real error surfaces via exit handlers.
+		child.stdin.on("error", () => {});
+		child.stdin.end(stdinContent);
 		const stderrTail = createBoundedByteTail();
 		const rawStdoutTail = createBoundedByteTail();
 		const messages: Message[] = [];
@@ -1315,7 +1321,7 @@ async function runSingleStep(
 				childIndex: ctx.flatIndex,
 			})
 			: undefined;
-		const { args, env, tempDir, toolDiagnosticPath, runtimeAcknowledgedExtensionsPath, capabilityAudit: attemptCapabilityAudit } = buildPiArgs(omitUndefinedProperties({
+		const { args, env, tempDir, toolDiagnosticPath, runtimeAcknowledgedExtensionsPath, capabilityAudit: attemptCapabilityAudit, stdinContent } = buildPiArgs(omitUndefinedProperties({
 			parentSessionId: step.parentSessionId,
 			baseArgs: ["--mode", "json", "-p"],
 			task,
@@ -1408,6 +1414,7 @@ async function runSingleStep(
 			ctx.stopMessage,
 			ctx.registerTurnBudgetAbort,
 			ctx.onWriterProcess,
+			stdinContent,
 		);
 		if (run.processCloseObservedAt !== undefined) {
 			writerProcesses.push({

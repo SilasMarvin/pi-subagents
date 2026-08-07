@@ -62,7 +62,6 @@ import {
 	type SubagentCapabilityAudit,
 } from "./capability-ceiling.ts";
 
-const TASK_ARG_LIMIT = 8000;
 const MAX_LAUNCH_RESOLVED_EXTENSION_IDS = 32;
 const PROMPT_RUNTIME_EXTENSION_PATH = path.join(
 	path.dirname(fileURLToPath(import.meta.url)),
@@ -160,6 +159,8 @@ export interface BuildPiArgsResult {
 	toolDiagnosticPath?: string;
 	runtimeAcknowledgedExtensionsPath?: string;
 	capabilityAudit?: SubagentCapabilityAudit;
+	/** Task content to write to the child's stdin. */
+	stdinContent: string;
 }
 
 function sanitizeSupervisorChannelSegment(value: string): string {
@@ -513,6 +514,10 @@ function escapeXmlAttr(value: string): string {
 
 export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const args = [...input.baseArgs];
+	// Task is delivered via stdin so argv stays free of user-controlled content;
+	// some host-security tools block spawns whose argv exceeds a per-argument scan budget.
+	// The runner writes stdinContent to the child's stdin.
+	const stdinContent = input.task;
 
 	if (input.sessionFile) {
 		fs.mkdirSync(path.dirname(input.sessionFile), { recursive: true });
@@ -583,17 +588,6 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 				: "--append-system-prompt",
 			promptPath,
 		);
-	}
-
-	if (input.task.length > TASK_ARG_LIMIT) {
-		if (!tempDir) {
-			tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
-		}
-		const taskFilePath = path.join(tempDir, "task.md");
-		fs.writeFileSync(taskFilePath, `Task: ${input.task}`, { mode: 0o600 });
-		args.push(`@${taskFilePath}`);
-	} else {
-		args.push(`Task: ${input.task}`);
 	}
 
 	const env: Record<string, string | undefined> = {};
@@ -783,6 +777,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		toolDiagnosticPath,
 		runtimeAcknowledgedExtensionsPath,
 		capabilityAudit: toolPlan.capabilityAudit,
+		stdinContent,
 	};
 }
 

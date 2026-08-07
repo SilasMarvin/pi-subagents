@@ -3,6 +3,20 @@ import path from "node:path";
 
 const queueDir = process.env.MOCK_PI_QUEUE_DIR;
 
+async function readStdin() {
+	return new Promise((resolve) => {
+		if (process.stdin.isTTY) return resolve(undefined);
+		let data = "";
+		process.stdin.setEncoding("utf-8");
+		process.stdin.on("data", (chunk) => {
+			data += chunk;
+		});
+		process.stdin.on("end", () => {
+			resolve(data.length > 0 ? data : undefined);
+		});
+	});
+}
+
 function exitAfterFlush(code) {
 	// process.exit() can truncate buffered stdout/stderr on slow runners (e.g.
 	// GitHub Actions), dropping the final lines the parent executor needs to see
@@ -328,6 +342,7 @@ async function main() {
 	if (!fs.existsSync(queueDir)) fail(`Mock queue dir does not exist: ${queueDir}`);
 
 	const args = process.argv.slice(2);
+	const stdinContent = await readStdin();
 	const jsonMode = isJsonMode(args);
 	const response = claimNextResponse(queueDir, args) ?? defaultResponse();
 	if (response.ignoreSigterm === true) {
@@ -337,7 +352,11 @@ async function main() {
 	writeToolDiagnostic(response);
 	const callPath = path.join(queueDir, `call-${Date.now()}-${process.pid}-${Math.random().toString(16).slice(2)}.json`);
 	const callTempPath = `${callPath}.tmp-${process.pid}-${Date.now()}`;
-	fs.writeFileSync(callTempPath, JSON.stringify({ args, systemPrompts: readSystemPromptRecords(args) }), "utf-8");
+	fs.writeFileSync(callTempPath, JSON.stringify({
+		args,
+		stdin: stdinContent,
+		systemPrompts: readSystemPromptRecords(args),
+	}), "utf-8");
 	fs.renameSync(callTempPath, callPath);
 
 	if (typeof response.delay === "number" && response.delay > 0) {
