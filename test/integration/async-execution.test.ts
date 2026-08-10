@@ -148,7 +148,16 @@ interface AsyncStatusPayload {
 
 interface MockPiCallRecord {
 	args?: string[];
+	stdin?: string;
 	systemPrompts?: Array<{ mode?: string; path?: string; text?: string; error?: string }>;
+}
+
+function withStdinSynthesized(record: MockPiCallRecord): string[] {
+	const args = record.args ?? [];
+	if (typeof record.stdin === "string" && !args.some((a) => a.startsWith("Task: "))) {
+		return [...args, `Task: ${record.stdin}`];
+	}
+	return args;
 }
 
 function writeWatchdogSettings(projectDir: string, tailMs = 120_000): void {
@@ -368,7 +377,7 @@ async function waitForMockPiCall(mockPi: MockPi, index: number, timeoutMs = 30_0
 		if (callFile) {
 			const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 			assert.ok(Array.isArray(payload.args), "expected recorded args");
-			return { args: payload.args, systemPrompts: payload.systemPrompts ?? [] };
+			return { args: withStdinSynthesized(payload), systemPrompts: payload.systemPrompts ?? [] };
 		}
 		if (Date.now() > deadline) assert.fail(`Timed out waiting for recorded mock pi call ${index}`);
 		await new Promise((resolve) => setTimeout(resolve, 100));
@@ -387,7 +396,7 @@ function readLastMockPiArgs(mockPi: MockPi): string[] {
 	assert.ok(callFile, "expected a recorded mock pi call");
 	const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 	assert.ok(Array.isArray(payload.args), "expected recorded args");
-	return payload.args;
+	return withStdinSynthesized(payload);
 }
 
 function readMockPiArgs(mockPi: MockPi, index: number): string[] {
@@ -398,7 +407,7 @@ function readMockPiArgs(mockPi: MockPi, index: number): string[] {
 	assert.ok(callFile, `expected recorded call ${index}`);
 	const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 	assert.ok(Array.isArray(payload.args), "expected recorded args");
-	return payload.args;
+	return withStdinSynthesized(payload);
 }
 
 function readMockPiArgsMatching(mockPi: MockPi, text: string): string[] {
@@ -406,9 +415,10 @@ function readMockPiArgsMatching(mockPi: MockPi, text: string): string[] {
 		.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 		.sort();
 	for (const callFile of callFiles) {
-		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as { args?: string[] };
+		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as MockPiCallRecord;
 		assert.ok(Array.isArray(payload.args), "expected recorded args");
-		if (payload.args.join("\n").includes(text)) return payload.args;
+		const args = withStdinSynthesized(payload);
+		if (args.join("\n").includes(text)) return args;
 	}
 	assert.fail(`expected recorded call containing ${text}`);
 }
@@ -1699,7 +1709,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			assert.equal(fs.readFileSync(artifactPaths[0], "utf-8"), "first async report");
 			assert.equal(fs.readFileSync(artifactPaths[1], "utf-8"), "second async report");
 			const calls = fs.readdirSync(mockPi.dir).filter((name) => name.startsWith("call-")).sort();
-			const taskArgs = calls.map((name) => (JSON.parse(fs.readFileSync(path.join(mockPi.dir, name), "utf-8")) as MockPiCallRecord).args?.at(-1) ?? "");
+			const taskArgs = calls.map((name) => withStdinSynthesized(JSON.parse(fs.readFileSync(path.join(mockPi.dir, name), "utf-8")) as MockPiCallRecord).at(-1) ?? "");
 			const firstTask = taskArgs.find((task) => task.includes("Write the first report")) ?? "";
 			const secondTask = taskArgs.find((task) => task.includes("Write the second report")) ?? "";
 			assert.ok(firstTask.includes(path.join("parallel-0", "0-worker", "context.md")));
@@ -1792,7 +1802,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		assert.equal(fs.readFileSync(artifactPaths[0], "utf-8"), "chain first report");
 		assert.equal(fs.readFileSync(artifactPaths[1], "utf-8"), "chain second report");
 		const calls = fs.readdirSync(mockPi.dir).filter((name) => name.startsWith("call-")).sort();
-		const taskArgs = calls.map((name) => (JSON.parse(fs.readFileSync(path.join(mockPi.dir, name), "utf-8")) as MockPiCallRecord).args?.at(-1) ?? "");
+		const taskArgs = calls.map((name) => withStdinSynthesized(JSON.parse(fs.readFileSync(path.join(mockPi.dir, name), "utf-8")) as MockPiCallRecord).at(-1) ?? "");
 		assert.ok(taskArgs.find((task) => task.includes("Write first"))?.includes(path.join("parallel-0", "0-worker", "context.md")));
 		assert.ok(taskArgs.find((task) => task.includes("Write second"))?.includes(path.join("parallel-0", "1-worker", "context.md")));
 	});

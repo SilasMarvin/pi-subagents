@@ -1400,7 +1400,11 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 			.sort();
 		const callFile = callFiles[index];
 		assert.ok(callFile, `expected call ${index}`);
-		return JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+		const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as { args: string[]; stdin?: string };
+		if (typeof payload.stdin === "string" && !payload.args.some((a) => a.startsWith("Task: "))) {
+			return [...payload.args, `Task: ${payload.stdin}`];
+		}
+		return payload.args;
 	}
 
 	function readCallArgsMatching(text: string): string[] {
@@ -1408,7 +1412,10 @@ describe("chain execution — parallel steps", { skip: !available ? "pi packages
 			.filter((name) => name.startsWith("call-") && name.endsWith(".json"))
 			.sort();
 		for (const callFile of callFiles) {
-			const args = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")).args as string[];
+			const payload = JSON.parse(fs.readFileSync(path.join(mockPi.dir, callFile), "utf-8")) as { args: string[]; stdin?: string };
+			const args = typeof payload.stdin === "string" && !payload.args.some((a) => a.startsWith("Task: "))
+				? [...payload.args, `Task: ${payload.stdin}`]
+				: payload.args;
 			if (args.join("\n").includes(text)) return args;
 		}
 		assert.fail(`expected recorded call containing ${text}`);

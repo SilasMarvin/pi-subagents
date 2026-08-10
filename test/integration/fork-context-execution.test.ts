@@ -173,6 +173,10 @@ describe("fork context execution wiring", { skip: !available ? "subagent executo
 		assert.notEqual(payload, null, "expected recorded args payload");
 		assert.ok("args" in payload, "expected recorded args payload");
 		assert.ok(Array.isArray(payload.args), "expected recorded args");
+		// Reconstruct the synthetic "Task: ..." arg from stdin so existing assertions stay readable.
+		if (typeof payload.stdin === "string" && !payload.args.some((a: string) => a.startsWith("Task: "))) {
+			return [...payload.args, `Task: ${payload.stdin}`];
+		}
 		return payload.args;
 	}
 
